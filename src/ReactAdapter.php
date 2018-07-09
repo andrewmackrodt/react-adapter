@@ -2,8 +2,11 @@
 
 namespace Amp\ReactAdapter;
 
+use Amp\Coroutine;
 use Amp\Loop;
 use Amp\Loop\Driver;
+use Amp\Promise;
+use Generator;
 use React\EventLoop\LoopInterface;
 use React\EventLoop\Timer\Timer;
 use React\EventLoop\TimerInterface;
@@ -74,7 +77,7 @@ class ReactAdapter implements LoopInterface {
         }
 
         $watcher = $this->driver->onReadable($stream, function () use ($stream, $listener) {
-            $listener($stream, $this);
+            return $this->call($listener, [$stream, $this]);
         });
 
         $this->readWatchers[(int) $stream] = $watcher;
@@ -142,7 +145,7 @@ class ReactAdapter implements LoopInterface {
         }
 
         $watcher = $this->driver->onWritable($stream, function () use ($stream, $listener) {
-            $listener($stream, $this);
+            return $this->call($listener, [$stream, $this]);
         });
 
         $this->writeWatchers[(int) $stream] = $watcher;
@@ -263,7 +266,7 @@ class ReactAdapter implements LoopInterface {
         $watcher = $this->driver->delay((int) (1000 * $interval), function () use ($timer, $callback) {
             $this->cancelTimer($timer);
 
-            $callback($timer);
+            return $this->call($callback, [$timer]);
         });
 
         $this->timers[spl_object_hash($timer)] = $watcher;
@@ -356,7 +359,7 @@ class ReactAdapter implements LoopInterface {
         $timer = new Timer($interval, $callback, true);
 
         $watcher = $this->driver->repeat((int) (1000 * $interval), function () use ($timer, $callback) {
-            $callback($timer);
+            return $this->call($callback, [$timer]);
         });
 
         $this->timers[spl_object_hash($timer)] = $watcher;
@@ -438,7 +441,7 @@ class ReactAdapter implements LoopInterface {
      */
     public function futureTick($listener) {
         $this->driver->defer(function () use ($listener) {
-            $listener($this);
+            return $this->call($listener, [$this]);
         });
     }
 
@@ -598,5 +601,30 @@ class ReactAdapter implements LoopInterface {
      */
     private function getSignalWatcherId(int $signal, callable $listener) {
         return array_search([$signal, $listener], $this->signalWatchers);
+    }
+
+    /**
+     * Allows callbacks to return a Promise or Generator so that yield may be
+     * used when migrating a project from React to Amp. React does not expect or
+     * handle returning values from such callbacks, therefore NULL is returned
+     * for anything that is not an instance of \Amp\Promise or \Generator.
+     *
+     * @param callable $callback
+     * @param array $args
+     *
+     * @return Promise|null
+     */
+    private function call(callable $callback, array $args) {
+        $result = $callback(...$args);
+
+        if ($result instanceof Generator) {
+            $result = new Coroutine($result);
+        }
+
+        if ($result instanceof Promise) {
+            return $result;
+        }
+
+        return null;
     }
 }
