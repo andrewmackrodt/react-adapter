@@ -6,7 +6,8 @@ use Amp\Loop;
 use Amp\Loop\Driver;
 use Amp\Loop\UnsupportedFeatureException;
 use Amp\ReactAdapter\ReactAdapter;
-use React\EventLoop\Timer\Timer;
+use Amp\ReactAdapter\Timer;
+use React\EventLoop\LoopInterface;
 use React\Tests\EventLoop\AbstractLoopTest;
 
 class Test extends AbstractLoopTest {
@@ -43,7 +44,7 @@ class Test extends AbstractLoopTest {
         fwrite($stream, $content);
     }
 
-    public function createLoop() {
+    public function createLoop(): LoopInterface {
         Loop::set(new Loop\NativeDriver);
         return ReactAdapter::get();
     }
@@ -83,29 +84,24 @@ class Test extends AbstractLoopTest {
     public function testCancelTimerReturnsIfNotSet() {
         $timer = new Timer(0.01, function () {});
 
-        // create the mock driver to assert no methods called
         $driver = $this->createMock(Driver::class);
         $driver->expects($this->never())->method($this->anything());
-        $loop = new ReactAdapter($driver);
 
+        $loop = new ReactAdapter($driver);
         $loop->cancelTimer($timer);
     }
 
-    /**
-     * @expectedException \BadMethodCallException
-     * @expectedExceptionMessage phpunit test
-     */
     public function testAddSignalUnsupportedFeatureExceptionIsCast() {
-        // set expectations
+        $this->expectException(\BadMethodCallException::class);
+
         $signal = SIGTERM;
         $listener = function () {};
         $exception = new UnsupportedFeatureException('phpunit test');
 
-        // create the mock driver to throw the exception
         $driver = $this->createMock(Driver::class);
         $driver->method('onSignal')->with($signal, $listener)->willThrowException($exception);
-        $loop = new ReactAdapter($driver);
 
+        $loop = new ReactAdapter($driver);
         $loop->addSignal($signal, $listener);
     }
 }
